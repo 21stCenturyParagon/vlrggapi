@@ -1,9 +1,10 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -15,6 +16,9 @@ from utils.constants import API_TITLE, API_DESCRIPTION, API_PORT
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+API_KEY = os.environ.get("API_KEY", "")
+OPEN_PATHS = {"/", "/version", "/openapi.json", "/health"}
 
 
 @asynccontextmanager
@@ -32,6 +36,16 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def verify_api_key(request: Request, call_next):
+    if API_KEY and request.url.path not in OPEN_PATHS:
+        provided = request.headers.get("x-api-key", "")
+        if provided != API_KEY:
+            return JSONResponse({"detail": "Invalid or missing API key"}, status_code=403)
+    return await call_next(request)
+
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
